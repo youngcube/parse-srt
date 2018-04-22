@@ -56,7 +56,7 @@ def process_video_with_srt(video_file):
                 else:
                     subtitle_text_eng = line.strip()
 
-            # 没翻译 或者没原文 直接放弃
+            # 没翻译 或者没原文 也不会做切割
             if len(subtitle_text_eng) < 4 or len(subtitle_text_chn) == 0:
                 continue
 
@@ -68,7 +68,6 @@ def process_video_with_srt(video_file):
             cmd = 'ffmpeg -i "{}" -ss {} -to {} -filter:v scale=560:-1 -vcodec mpeg4 -crf 40 -async 1 -strict -2 -preset veryslow -acodec copy "{}"'.format(video_file, start_time, end_time, subtext)
             rst = run_command(cmd)
             print(cmd)
-
 
 
 def run_command(cmd):
@@ -110,9 +109,9 @@ def get_video_files(root_dir):
 
 
 if __name__ == "__main__":
-
     global all_video_files
     all_video_files = []
+
     get_video_files('.')
 
     for video in all_video_files:
@@ -131,12 +130,17 @@ if __name__ == "__main__":
         srt_file_name = file_name + '.srt'
         if os.path.isfile(srt_file_name):
             srt_video_files.append(video)
+            # 检查是否是 utf8 若不是，则转码
+            encode = ''
+            with open(srt_file_name, 'rb') as utf8:
+                rawdata = b''.join([utf8.readline() for _ in range(20)])
+                encode = chardet.detect(rawdata)['encoding']
 
-
-
-            # with open(srt_file_name, 'r') as utf8:
-            #     aa = chardet.detect(utf8)
-            #     print(aa)
+            if not encode.lower().startswith('utf'):
+                with open(srt_file_name, encoding=encode) as fobj:
+                    content = fobj.read()
+                with open(srt_file_name, 'w', encoding='utf-8') as fobj:
+                    fobj.write(content)
 
 
     for video in srt_video_files:

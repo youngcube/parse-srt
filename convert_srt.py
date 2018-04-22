@@ -154,8 +154,9 @@ if __name__ == "__main__":
         file_name, file_extension = os.path.splitext(video)
         srt_file_name = file_name + '_export_srt.srt'
         cmd = 'ffmpeg -i "{}" -map 0:s:0 "{}"'.format(video, srt_file_name)
-        rst = run_command(cmd)
         print(cmd)
+        rst = run_command(cmd)
+        print(rst)
 
     # 尝试挑选出一个带原文和译文（是简体中文的）的最佳 srt 出来
     # 随机挑选10个字幕出来 如果这些字幕>1行 且带一个中文行 的数量有70%以上 则代表是翻译字幕

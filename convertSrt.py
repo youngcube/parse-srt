@@ -8,12 +8,16 @@ import pysrt
 import json
 import shutil
 import chardet
+import glob
+import random
+from mafan import text as mafan_text
 
+# 处理同名的视频和字幕，已经做好检测，是带原文和译文的
 def process_video_with_srt(video_file):
     file_name, file_extension = os.path.splitext(video_file)
-    srt_file_name = file_name + '.srt'
+    srt_file_name = file_name + '_correct.srt'
 
-    with open(srt_file_name, 'r') as srt_file:
+    with open(srt_file_name, 'r', encoding=get_file_encode(srt_file_name)) as srt_file:
         # 字幕列表格式
         # 0 = {str}
         # '11\n'
@@ -39,6 +43,7 @@ def process_video_with_srt(video_file):
             return
 
         for subtitle in subtitle_list:
+            # 长度小于3秒的 不带字幕的 不切
             if subtitle.duration.seconds < 3 or len(subtitle.text_without_tags) == 0:
                 continue
             start_time = '{}'.format(subtitle.start).split(',')[0]
@@ -52,11 +57,14 @@ def process_video_with_srt(video_file):
             subtitle_text_eng = ''
             for line in subtitle_lines:
                 if check_contain_chinese(line):
-                    subtitle_text_chn = line.strip()
+                    if mafan_text.is_traditional(line):
+                        subtitle_text_chn = mafan_text.simplify(line.strip())
+                    else:
+                        subtitle_text_chn = line.strip()
                 else:
                     subtitle_text_eng = line.strip()
 
-            # 没翻译 或者没原文 也不会做切割
+            # 没翻译 或者没原文 不切
             if len(subtitle_text_eng) < 4 or len(subtitle_text_chn) == 0:
                 continue
 
@@ -85,14 +93,22 @@ def check_contain_chinese(check_str):
             return True
     return False
 
+def get_file_encode(file_name):
+    encode = ''
+    with open(file_name, 'rb') as utf8:
+        rawdata = b''.join([utf8.readline() for _ in range(20)])
+        encode = chardet.detect(rawdata)['encoding']
+    return encode
 
-# 如果字幕不是 srt 格式的，先转成 srt，如果有同名的 srt ，则删除重新创建
+
+# 如果字幕不是 srt 格式的，先转成 srt，转换后的名字带后缀 _converted_ass
 def convert_ass_to_srt(file_string):
     file_name, file_extension = os.path.splitext(file_string)
     if file_extension.endswith('ass'):
-        with open(file_string) as ass_file:
+        encode = get_file_encode(file_string)
+        with open(file_string, encoding=encode) as ass_file:
             srt_str = asstosrt.convert(ass_file)
-        srt_file_name = file_name + '.srt'
+        srt_file_name = file_name + '_converted_ass.srt'
         if os.path.isfile(srt_file_name):
             os.remove(srt_file_name)
         with open(srt_file_name, "w") as srt_file:
@@ -108,39 +124,105 @@ def get_video_files(root_dir):
             all_video_files.append(path)
 
 
+def random_int_list(start, stop, length):
+    start, stop = (int(start), int(stop)) if start <= stop else (int(stop), int(start))
+    length = int(abs(length)) if length else 0
+    random_list = []
+    for i in range(length):
+        random_list.append(random.randint(start, stop))
+    return random_list
+
+
 if __name__ == "__main__":
     global all_video_files
     all_video_files = []
 
+    # 遍历所有文件夹内的视频文件并存入 all_video_files
     get_video_files('.')
 
+    # 如果有ass，尝试转成一个srt，这是为了防止下载下来的只有ass带翻译字幕 而srt没有，作为一个备选
     for video in all_video_files:
         file_name, file_extension = os.path.splitext(video)
-        srt_file_name = file_name + '.srt'
-        ass_file_name = file_name + '.ass'
-        if not os.path.isfile(srt_file_name):
-            # 如果没有srt尝试转一个srt
-            if os.path.isfile(ass_file_name):
+        ass_file_name_list = glob.glob(file_name + '*.ass')
+        if len(ass_file_name_list) > 0:
+            for ass_file_name in ass_file_name_list:
                 convert_ass_to_srt(ass_file_name)
 
-    srt_video_files = []
-    # 准备工作，先转成 utf8 避免python解析失败
+    # 视频可能带内嵌字幕，可以从视频里直接尝试提取，改后缀 _export_srt，然后保存，作为一个备选
     for video in all_video_files:
         file_name, file_extension = os.path.splitext(video)
-        srt_file_name = file_name + '.srt'
-        if os.path.isfile(srt_file_name):
-            srt_video_files.append(video)
-            # 检查是否是 utf8 若不是，则转码
-            encode = ''
-            with open(srt_file_name, 'rb') as utf8:
-                rawdata = b''.join([utf8.readline() for _ in range(20)])
-                encode = chardet.detect(rawdata)['encoding']
+        srt_file_name = file_name + '_export_srt.srt'
+        cmd = 'ffmpeg -i "{}" -map 0:s:0 "{}"'.format(video, srt_file_name)
+        rst = run_command(cmd)
+        print(cmd)
 
-            if not encode.lower().startswith('utf'):
-                with open(srt_file_name, encoding=encode) as fobj:
-                    content = fobj.read()
-                with open(srt_file_name, 'w', encoding='utf-8') as fobj:
-                    fobj.write(content)
+    # 尝试挑选出一个带原文和译文（是简体中文的）的最佳 srt 出来
+    # 随机挑选10个字幕出来 如果这些字幕>1行 且带一个中文行 的数量有70%以上 则代表是翻译字幕
+    srt_video_files = []
+    for video in all_video_files:
+        file_name, file_extension = os.path.splitext(video)
+        srt_file_name_list = glob.glob(file_name + '*.srt')
+        for srt_index, srt_file_name in enumerate(srt_file_name_list):
+            if os.path.isfile(srt_file_name):
+                subtitle_list = pysrt.open(srt_file_name)
+                random_length = min(10, len(subtitle_list))
+                if random_length == 0:
+                    continue
+                random_list = random_int_list(0, len(subtitle_list) - 1, random_length)
+                has_trans_list = []
+                for random_int in random_list:
+                    subtitle = subtitle_list[random_int]
+                    subtitle_text_lines = subtitle.text_without_tags.split('\n')
+                    if len(subtitle_text_lines) < 2:
+                        continue
+                    has_chn = False
+                    has_eng = False
+                    for line in subtitle_text_lines:
+                        if check_contain_chinese(line):
+                            has_chn = True
+                        else:
+                            has_eng = True
+
+                    if has_eng == True and has_chn == True:
+                        has_trans_list.append(random_int)
+
+                if len(has_trans_list) > random_length * 0.7:
+                    # 是中英双语字幕，改成后缀处理
+                    correct_srt_file_name = file_name + '_correct_' + str(srt_index) + '.srt'
+                    if os.path.isfile(correct_srt_file_name):
+                        os.remove(correct_srt_file_name)
+                    os.rename(srt_file_name, correct_srt_file_name)
+
+
+        correct_srt_file_list = glob.glob(file_name + '_correct_*.srt')
+        # 有多个符合条件的中英双语，筛选出简体的，如果没有，才用繁体
+        if len(correct_srt_file_list) > 0:
+            srt_video_files.append(video)
+            finall_correct_srt_file_name = file_name + '_correct' + '.srt'
+            for correct_srt_file in correct_srt_file_list:
+                subtitle_list = pysrt.open(correct_srt_file)
+                random_length = min(10, len(subtitle_list))
+                random_list = random_int_list(0, len(subtitle_list) - 1, random_length)
+                has_chs_list = []
+                for random_int in random_list:
+                    subtitle = subtitle_list[random_int]
+                    subtitle_text_lines = subtitle.text_without_tags.split('\n')
+                    if len(subtitle_text_lines) < 2:
+                        continue
+                    has_chs = False
+                    for line in subtitle_text_lines:
+                        if mafan_text.is_simplified(line):
+                            has_chs_list.append(random_int)
+
+                if len(has_chs_list) > random_length * 0.7:
+                    if os.path.isfile(finall_correct_srt_file_name):
+                        os.remove(finall_correct_srt_file_name)
+                    os.rename(correct_srt_file, finall_correct_srt_file_name)
+
+
+            # 全部检测完毕 没有一个符合的 说明是繁体，只能用繁体了
+            if not os.path.isfile(finall_correct_srt_file_name):
+                os.rename(correct_srt_file_list[0], finall_correct_srt_file_name)
 
 
     for video in srt_video_files:

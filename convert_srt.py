@@ -74,8 +74,9 @@ def process_video_with_srt(video_file):
                 subtext = file_name + '/' + subtitle_text_eng + '.mp4'
 
             cmd = 'ffmpeg -i "{}" -ss {} -to {} -filter:v scale=560:-1 -vcodec mpeg4 -crf 40 -async 1 -strict -2 -preset veryslow -acodec copy "{}"'.format(video_file, start_time, end_time, subtext)
-            rst = run_command(cmd)
             print(cmd)
+            rst = run_command(cmd)
+            print(rst)
 
 
 def run_command(cmd):
@@ -195,7 +196,7 @@ if __name__ == "__main__":
 
 
         correct_srt_file_list = glob.glob(file_name + '_correct_*.srt')
-        # 有多个符合条件的中英双语，筛选出简体的，如果没有，才用繁体
+        # 有多个符合条件的中英双语，筛选出简体的，如果没有，才用繁体，和之前一样的算法
         if len(correct_srt_file_list) > 0:
             srt_video_files.append(video)
             finall_correct_srt_file_name = file_name + '_correct' + '.srt'
@@ -224,8 +225,10 @@ if __name__ == "__main__":
             if not os.path.isfile(finall_correct_srt_file_name):
                 os.rename(correct_srt_file_list[0], finall_correct_srt_file_name)
 
-
-    for video in srt_video_files:
-        process_video_with_srt(video)
+    if len(srt_video_files) == 0:
+        print('没有一个符合条件的中英双语字幕的视频文件，停止处理')
+    else:
+        for video in srt_video_files:
+            process_video_with_srt(video)
 
 

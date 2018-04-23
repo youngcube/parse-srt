@@ -181,8 +181,7 @@ def get_file_encode(file_name):
 def convert_ass_to_srt(file_string):
     file_name, file_extension = os.path.splitext(file_string)
     if file_extension.endswith('ass'):
-        encode = get_file_encode(file_string)
-        with open(file_string, encoding=encode) as ass_file:
+        with open(file_string) as ass_file:
             srt_str = asstosrt.convert(ass_file)
         srt_file_name = file_name + '_converted_ass.srt'
         if os.path.isfile(srt_file_name):
@@ -279,13 +278,16 @@ if __name__ == "__main__":
         if not 'streams' in video_json:
             continue
         video_stream_list = video_json['streams']
-        video_sub_index_list = []
+        video_srt_index_list = []
+        video_ass_index_list = []
         for video_stream in video_stream_list:
             if video_stream['codec_name'] == 'subrip':
-                video_sub_index_list.append(int(video_stream['index']))
+                video_srt_index_list.append(int(video_stream['index']))
+            elif video_stream['codec_name'] == 'ass':
+                video_ass_index_list.append(int(video_stream['index']))
 
         export_subtitle_list = []
-        for video_sub_index in video_sub_index_list:
+        for video_sub_index in video_srt_index_list:
             srt_file_name = file_name + '_' + str(video_sub_index) + '_export_srt.srt'
             if os.path.isfile(srt_file_name):
                 os.remove(srt_file_name)
@@ -294,6 +296,16 @@ if __name__ == "__main__":
             rst = run_command(cmd)
             print(rst)
             export_subtitle_list.append(srt_file_name)
+
+        for video_sub_index in video_ass_index_list:
+            ass_file_name = file_name + '_' + str(video_sub_index) + '_export_ass.ass'
+            if os.path.isfile(ass_file_name):
+                os.remove(ass_file_name)
+            cmd = 'ffmpeg -i "{}" -map 0:{} "{}"'.format(video, str(video_sub_index), ass_file_name)
+            print(cmd)
+            rst = run_command(cmd)
+            print(rst)
+            convert_ass_to_srt(ass_file_name)
 
         # 挑选出内嵌字幕的中英文
         for export_file in export_subtitle_list:

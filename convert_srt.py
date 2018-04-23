@@ -195,7 +195,7 @@ def random_int_list(start, stop, length):
 
 # 随机挑选10个字幕出来 如果这些字幕中系又带中文又带英文 则代表是双语字幕
 def check_srt_type(file_name):
-    export = pysrt.open(file_name)
+    export = pysrt.open(file_name, encoding=get_file_encode(file_name))
     random_length = min(10, len(export))
     if random_length == 0:
         return SRT_TYPE.Unknown

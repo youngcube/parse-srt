@@ -46,6 +46,7 @@ def find_subtitle(subtitle, from_t, to_t, lo=0):
 
     return "", i
 
+
 def merge_subtitle(sub_a, sub_b, delta):
     out = SubRipFile()
     intervals = [item.start.ordinal for item in sub_a]
@@ -94,8 +95,8 @@ def process_video_with_srt(video_file):
 
         video_info_cmd = 'ffprobe -v quiet -print_format json -show_format -show_streams "{}"'.format(video_file)
         video_duration = float(json.loads(run_command(video_info_cmd))['format']['duration'])
-
-        subtitle_list = pysrt.open(srt_file_name)
+        encode = get_file_encode(srt_file_name)
+        subtitle_list = pysrt.open(srt_file_name, encoding=encode)
         srt_info_duration = (subtitle_list[-1].end - subtitle_list[0].start).to_time()
         srt_duration = srt_info_duration.hour * 3600 + srt_info_duration.minute * 60 + srt_info_duration.second
         if (video_duration > srt_duration + 5000):
@@ -136,7 +137,6 @@ def process_video_with_srt(video_file):
             cmd = 'ffmpeg -i "{}" -ss {} -to {} -filter:v scale=560:-1 -vcodec mpeg4 -crf 40 -async 1 -strict -2 -preset veryslow -acodec copy "{}"'.format(video_file, start_time, end_time, subtext)
             print(cmd)
             rst = run_command(cmd)
-            print(rst)
 
 
 def run_command(cmd):
@@ -153,6 +153,7 @@ def check_contain_chinese(check_str):
         if u'\u4e00' <= ch <= u'\u9fff':
             return True
     return False
+
 
 def get_file_encode(file_name):
     encode = ''
@@ -172,7 +173,7 @@ def convert_ass_to_srt(file_string):
         srt_file_name = file_name + '_converted_ass.srt'
         if os.path.isfile(srt_file_name):
             os.remove(srt_file_name)
-        with open(srt_file_name, "w") as srt_file:
+        with open(srt_file_name, "w", encoding='utf-8', newline='\n') as srt_file:
             srt_file.write(srt_str)
 
 

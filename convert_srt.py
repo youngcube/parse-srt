@@ -172,7 +172,7 @@ def convert_ass_to_srt(file_string):
         srt_file_name = file_name + '_converted_ass.srt'
         if os.path.isfile(srt_file_name):
             os.remove(srt_file_name)
-        with open(srt_file_name, "w") as srt_file:
+        with open(srt_file_name, "w", encoding='utf8') as srt_file:
             srt_file.write(srt_str)
 
 

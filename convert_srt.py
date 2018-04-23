@@ -181,7 +181,8 @@ def get_file_encode(file_name):
 def convert_ass_to_srt(file_string):
     file_name, file_extension = os.path.splitext(file_string)
     if file_extension.endswith('ass'):
-        with open(file_string) as ass_file:
+        # https://www.zhihu.com/question/36368902
+        with open(file_string, errors='ignore') as ass_file:
             srt_str = asstosrt.convert(ass_file)
         srt_file_name = file_name + '_converted_ass.srt'
         if os.path.isfile(srt_file_name):

@@ -137,6 +137,7 @@ def process_video_with_srt(video_file):
             cmd = 'ffmpeg -i "{}" -ss {} -to {} -filter:v scale=560:-1 -vcodec mpeg4 -crf 40 -async 1 -strict -2 -preset veryslow -acodec copy "{}"'.format(video_file, start_time, end_time, subtext)
             print(cmd)
             rst = run_command(cmd)
+            print(rst)
 
 
 def run_command(cmd):
@@ -146,6 +147,15 @@ def run_command(cmd):
         return rst
     except:
         return ''
+
+def insensitive_glob(pattern):
+    if os.name == 'nt':
+        def either(c):
+            return '[%s%s]' % (c.lower(), c.upper()) if c.isalpha() else c
+
+        return glob.glob(''.join(map(either, pattern)))
+    else:
+        return glob.glob(pattern)
 
 
 def check_contain_chinese(check_str):
@@ -251,7 +261,7 @@ if __name__ == "__main__":
     # 如果有ass，尝试转成一个srt，这是为了防止下载下来的只有ass带翻译字幕 而srt没有，作为一个备选
     for video in all_video_files:
         file_name, file_extension = os.path.splitext(video)
-        ass_file_name_list = glob.glob(file_name + '*.ass')
+        ass_file_name_list = insensitive_glob(file_name + '*.ass')
         if len(ass_file_name_list) > 0:
             for ass_file_name in ass_file_name_list:
                 convert_ass_to_srt(ass_file_name)
@@ -318,7 +328,7 @@ if __name__ == "__main__":
     srt_video_files = []
     for video in all_video_files:
         file_name, file_extension = os.path.splitext(video)
-        srt_file_name_list = glob.glob(file_name + '*.srt')
+        srt_file_name_list = insensitive_glob(file_name + '*.srt')
         for srt_index, srt_file_name in enumerate(srt_file_name_list):
             if os.path.isfile(srt_file_name):
                 type = check_srt_type(srt_file_name)
@@ -345,12 +355,12 @@ if __name__ == "__main__":
 
             inner_srt_chn_file_name = file_name + '_inner_chn.srt'
             inner_srt_eng_file_name = file_name + '_inner_eng.srt'
-            inner_srt_both_file_name_list = glob.glob(file_name + '_correct_*.srt')
+            inner_srt_both_file_name_list = insensitive_glob(file_name + '_correct_*.srt')
             if len(inner_srt_both_file_name_list) == 0 and os.path.isfile(inner_srt_chn_file_name) and os.path.isfile(inner_srt_eng_file_name):
                 merge_srt(inner_srt_chn_file_name, inner_srt_eng_file_name, file_name + '_correct_' + str(1) + '.srt')
 
 
-        correct_srt_file_list = glob.glob(file_name + '_correct_*.srt')
+        correct_srt_file_list = insensitive_glob(file_name + '_correct_*.srt')
         # 有多个符合条件的中英双语，筛选出简体的，如果没有，才用繁体，和之前一样的算法
         if len(correct_srt_file_list) > 0:
             srt_video_files.append(video)

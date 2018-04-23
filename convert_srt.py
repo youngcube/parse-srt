@@ -104,8 +104,8 @@ def process_video_with_srt(video_file):
             return
 
         for subtitle in subtitle_list:
-            # 长度小于3秒的 不带字幕的 不切
-            if subtitle.duration.seconds < 3 or len(subtitle.text_without_tags) == 0:
+            # 长度小于3秒的 不带字幕的 前1分钟内的 不切
+            if subtitle.duration.seconds < 3 or len(subtitle.text_without_tags) == 0 or subtitle.start.minutes < 1:
                 continue
             start_time = '{}'.format(subtitle.start).split(',')[0]
             # 加上1秒的缓冲 可能不够
@@ -133,6 +133,10 @@ def process_video_with_srt(video_file):
                 subtext = file_name + '\\' + subtitle_text_eng + '.mp4'
             else:
                 subtext = file_name + '/' + subtitle_text_eng + '.mp4'
+
+            # 如果有同名的文件 以最后一个为准
+            if os.path.isfile(subtext):
+                os.remove(subtext)
 
             cmd = 'ffmpeg -i "{}" -ss {} -to {} -filter:v scale=560:-1 -vcodec mpeg4 -crf 40 -async 1 -strict -2 -preset veryslow -acodec copy "{}"'.format(video_file, start_time, end_time, subtext)
             print(cmd)

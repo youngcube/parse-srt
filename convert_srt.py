@@ -118,11 +118,11 @@ def process_video_with_srt(video_file):
             for line in subtitle_lines:
                 if check_contain_chinese(line):
                     if mafan_text.is_traditional(line):
-                        subtitle_text_chn = mafan_text.simplify(line.strip())
+                        subtitle_text_chn += mafan_text.simplify(line.strip())
                     else:
-                        subtitle_text_chn = line.strip()
+                        subtitle_text_chn += line.strip()
                 else:
-                    subtitle_text_eng = line.strip()
+                    subtitle_text_eng += line.strip()
 
             # 没翻译 或者没原文 不切
             if len(subtitle_text_eng) < 4 or len(subtitle_text_chn) == 0:

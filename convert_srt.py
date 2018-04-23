@@ -10,7 +10,67 @@ import shutil
 import chardet
 import glob
 import random
+import datetime
+import codecs
+import re
 from mafan import text as mafan_text
+from enum import Enum, unique
+from pysrt import SubRipFile
+from pysrt import SubRipItem
+from pysrt import SubRipTime
+
+@unique
+class SRT_TYPE(Enum):
+    Chinese = 0
+    English = 1
+    Both = 2
+    Unknown = 3
+
+
+def join_lines(txtsub1, txtsub2):
+    if (len(txtsub1) > 0) & (len(txtsub2) > 0):
+        return txtsub1 + '\n' + txtsub2
+    else:
+        return txtsub1 + txtsub2
+
+
+def find_subtitle(subtitle, from_t, to_t, lo=0):
+    i = lo
+    while (i < len(subtitle)):
+        if (subtitle[i].start >= to_t):
+            break
+
+        if (subtitle[i].start <= from_t) & (to_t  <= subtitle[i].end):
+            return subtitle[i].text, i
+        i += 1
+
+    return "", i
+
+def merge_subtitle(sub_a, sub_b, delta):
+    out = SubRipFile()
+    intervals = [item.start.ordinal for item in sub_a]
+    intervals.extend([item.end.ordinal for item in sub_a])
+    intervals.extend([item.start.ordinal for item in sub_b])
+    intervals.extend([item.end.ordinal for item in sub_b])
+    intervals.sort()
+
+    j = k = 0
+    for i in range(1, len(intervals)):
+        start = SubRipTime.from_ordinal(intervals[i-1])
+        end = SubRipTime.from_ordinal(intervals[i])
+
+        if (end-start) > delta:
+            text_a, j = find_subtitle(sub_a, start, end, j)
+            text_b, k = find_subtitle(sub_b, start, end, k)
+
+            text = join_lines(text_a, text_b)
+            if len(text) > 0:
+                item = SubRipItem(0, start, end, text)
+                out.append(item)
+
+    out.clean_indexes()
+    return out
+
 
 # 处理同名的视频和字幕，已经做好检测，是带原文和译文的
 def process_video_with_srt(video_file):
@@ -133,6 +193,52 @@ def random_int_list(start, stop, length):
         random_list.append(random.randint(start, stop))
     return random_list
 
+# 随机挑选10个字幕出来 如果这些字幕中系又带中文又带英文 则代表是双语字幕
+def check_srt_type(file_name):
+    export = pysrt.open(file_name)
+    random_length = min(10, len(export))
+    if random_length == 0:
+        return SRT_TYPE.Unknown
+    random_list = random_int_list(0, len(export) - 1, random_length)
+    chn_list = []
+    eng_list = []
+    both_list = []
+    for random_int in random_list:
+        subtitle = export[random_int]
+        subtitle_text_lines = subtitle.text_without_tags.split('\n')
+        has_chn = False
+        has_eng = False
+        for line in subtitle_text_lines:
+            if check_contain_chinese(line):
+                has_chn = True
+            else:
+                has_eng = True
+
+            if has_chn == True and has_eng == True:
+                both_list.append(random_int)
+            elif has_eng == True:
+                eng_list.append(random_int)
+            elif has_chn == True:
+                chn_list.append(random_int)
+
+    if len(both_list) > random_length * 0.7:
+        return SRT_TYPE.Both
+    if len(chn_list) > random_length * 0.7:
+        return SRT_TYPE.Chinese
+    if len(eng_list) > random_length * 0.7:
+        return SRT_TYPE.English
+    return SRT_TYPE.Unknown
+
+def merge_srt(chn_file, eng_file, output_file):
+    delta = SubRipTime(milliseconds=500)
+    subs_a = SubRipFile.open(chn_file)
+    subs_b = SubRipFile.open(eng_file)
+    out = merge_subtitle(subs_a, subs_b, delta)
+    if os.path.isfile(output_file):
+        os.remove(output_file)
+    out.save(output_file, encoding='utf8')
+
+
 
 if __name__ == "__main__":
     global all_video_files
@@ -152,48 +258,95 @@ if __name__ == "__main__":
     # 视频可能带内嵌字幕，可以从视频里直接尝试提取，改后缀 _export_srt，然后保存，作为一个备选
     for video in all_video_files:
         file_name, file_extension = os.path.splitext(video)
-        srt_file_name = file_name + '_export_srt.srt'
-        cmd = 'ffmpeg -i "{}" -map 0:s:0 "{}"'.format(video, srt_file_name)
-        print(cmd)
-        rst = run_command(cmd)
-        print(rst)
+
+        video_info_cmd = 'ffprobe -v quiet -print_format json -show_format -show_streams "{}"'.format(video)
+        video_json = json.loads(run_command(video_info_cmd))
+        if not 'streams' in video_json:
+            continue
+        video_stream_list = video_json['streams']
+        video_sub_index_list = []
+        for video_stream in video_stream_list:
+            if video_stream['codec_name'] == 'subrip':
+                video_sub_index_list.append(int(video_stream['index']))
+
+        export_subtitle_list = []
+        for video_sub_index in video_sub_index_list:
+            srt_file_name = file_name + '_' + str(video_sub_index) + '_export_srt.srt'
+            if os.path.isfile(srt_file_name):
+                os.remove(srt_file_name)
+            cmd = 'ffmpeg -i "{}" -map 0:{} "{}"'.format(video, str(video_sub_index), srt_file_name)
+            print(cmd)
+            rst = run_command(cmd)
+            print(rst)
+            export_subtitle_list.append(srt_file_name)
+
+        # 挑选出内嵌字幕的中英文
+        for export_file in export_subtitle_list:
+            type = check_srt_type(export_file)
+
+            if type == SRT_TYPE.Chinese:
+                # 是中文
+                correct_srt_file_name = file_name + '_export_chn.srt'
+                if os.path.isfile(correct_srt_file_name):
+                    os.remove(correct_srt_file_name)
+                os.rename(export_file, correct_srt_file_name)
+
+            if type == SRT_TYPE.English:
+                # 是英文
+                correct_srt_file_name = file_name + '_export_eng.srt'
+                if os.path.isfile(correct_srt_file_name):
+                    os.remove(correct_srt_file_name)
+                os.rename(export_file, correct_srt_file_name)
+
+            if type == SRT_TYPE.Both:
+                correct_srt_file_name = file_name + '_export_both.srt'
+                if os.path.isfile(correct_srt_file_name):
+                    os.remove(correct_srt_file_name)
+                os.rename(export_file, correct_srt_file_name)
+
+        correct_srt_chn_file_name = file_name + '_export_chn.srt'
+        correct_srt_eng_file_name = file_name + '_export_eng.srt'
+        correct_srt_both_file_name = file_name + '_export_both.srt'
+
+        # 导出的字幕只有中文和英文，没有中英双语
+        if not os.path.isfile(correct_srt_both_file_name) and os.path.isfile(correct_srt_chn_file_name) and os.path.isfile(correct_srt_eng_file_name):
+            merge_srt(correct_srt_chn_file_name, correct_srt_eng_file_name, correct_srt_both_file_name)
+
 
     # 尝试挑选出一个带原文和译文（是简体中文的）的最佳 srt 出来
-    # 随机挑选10个字幕出来 如果这些字幕>1行 且带一个中文行 的数量有70%以上 则代表是翻译字幕
     srt_video_files = []
     for video in all_video_files:
         file_name, file_extension = os.path.splitext(video)
         srt_file_name_list = glob.glob(file_name + '*.srt')
         for srt_index, srt_file_name in enumerate(srt_file_name_list):
             if os.path.isfile(srt_file_name):
-                subtitle_list = pysrt.open(srt_file_name)
-                random_length = min(10, len(subtitle_list))
-                if random_length == 0:
-                    continue
-                random_list = random_int_list(0, len(subtitle_list) - 1, random_length)
-                has_trans_list = []
-                for random_int in random_list:
-                    subtitle = subtitle_list[random_int]
-                    subtitle_text_lines = subtitle.text_without_tags.split('\n')
-                    if len(subtitle_text_lines) < 2:
-                        continue
-                    has_chn = False
-                    has_eng = False
-                    for line in subtitle_text_lines:
-                        if check_contain_chinese(line):
-                            has_chn = True
-                        else:
-                            has_eng = True
-
-                    if has_eng == True and has_chn == True:
-                        has_trans_list.append(random_int)
-
-                if len(has_trans_list) > random_length * 0.7:
-                    # 是中英双语字幕，改成后缀处理
-                    correct_srt_file_name = file_name + '_correct_' + str(srt_index) + '.srt'
-                    if os.path.isfile(correct_srt_file_name):
+                type = check_srt_type(srt_file_name)
+                if type == SRT_TYPE.Chinese:
+                    # 是中文
+                    correct_srt_file_name = file_name + '_inner_chn.srt'
+                    if not correct_srt_file_name == srt_file_name and os.path.isfile(correct_srt_file_name):
                         os.remove(correct_srt_file_name)
                     os.rename(srt_file_name, correct_srt_file_name)
+                elif type == SRT_TYPE.English:
+                    # 是英文
+                    correct_srt_file_name = file_name + '_inner_eng.srt'
+                    if not correct_srt_file_name == srt_file_name and os.path.isfile(correct_srt_file_name):
+                        os.remove(correct_srt_file_name)
+                    os.rename(srt_file_name, correct_srt_file_name)
+                elif type == SRT_TYPE.Both:
+                    correct_srt_file_name = file_name + '_correct_' + str(srt_index) + '.srt'
+                    if not correct_srt_file_name == srt_file_name and os.path.isfile(correct_srt_file_name):
+                        os.remove(correct_srt_file_name)
+                    os.rename(srt_file_name, correct_srt_file_name)
+                else:
+                    correct_srt_file_name = ''
+
+
+            inner_srt_chn_file_name = file_name + '_inner_chn.srt'
+            inner_srt_eng_file_name = file_name + '_inner_eng.srt'
+            inner_srt_both_file_name_list = glob.glob(file_name + '_correct_*.srt')
+            if len(inner_srt_both_file_name_list) == 0 and os.path.isfile(inner_srt_chn_file_name) and os.path.isfile(inner_srt_eng_file_name):
+                merge_srt(inner_srt_chn_file_name, inner_srt_eng_file_name, file_name + '_correct_' + str(1) + '.srt')
 
 
         correct_srt_file_list = glob.glob(file_name + '_correct_*.srt')
@@ -202,21 +355,7 @@ if __name__ == "__main__":
             srt_video_files.append(video)
             finall_correct_srt_file_name = file_name + '_correct' + '.srt'
             for correct_srt_file in correct_srt_file_list:
-                subtitle_list = pysrt.open(correct_srt_file)
-                random_length = min(10, len(subtitle_list))
-                random_list = random_int_list(0, len(subtitle_list) - 1, random_length)
-                has_chs_list = []
-                for random_int in random_list:
-                    subtitle = subtitle_list[random_int]
-                    subtitle_text_lines = subtitle.text_without_tags.split('\n')
-                    if len(subtitle_text_lines) < 2:
-                        continue
-                    has_chs = False
-                    for line in subtitle_text_lines:
-                        if mafan_text.is_simplified(line):
-                            has_chs_list.append(random_int)
-
-                if len(has_chs_list) > random_length * 0.7:
+                if check_srt_type(correct_srt_file) == SRT_TYPE.Both:
                     if os.path.isfile(finall_correct_srt_file_name):
                         os.remove(finall_correct_srt_file_name)
                     os.rename(correct_srt_file, finall_correct_srt_file_name)

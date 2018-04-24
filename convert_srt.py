@@ -154,7 +154,7 @@ def process_video_with_srt(video_file):
                 os.remove(subtext)
 
             #https://stackoverflow.com/questions/20847674/ffmpeg-libx264-height-not-divisible-by-2
-            cmd = 'ffmpeg -i "{}" -ss {} -to {} -vf scale=560:-2 -c:v libx264 -c:a aac -crf 40 -ac 1 -preset veryslow "{}"'.format(
+            cmd = 'ffmpeg -i "{}" -ss {} -to {} -vf scale=560:-2 -c:v libx264 -c:a aac -crf 30 -ac 1 -preset veryslow "{}"'.format(
                 video_file, start_time, end_time, subtext)
 
             print(cmd)

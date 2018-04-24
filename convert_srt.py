@@ -198,7 +198,7 @@ def get_file_encode(file_name):
 # 如果字幕不是 srt 格式的，先转成 srt，转换后的名字带后缀 _converted_ass
 def convert_ass_to_srt(file_string):
     file_name, file_extension = os.path.splitext(file_string)
-    if file_extension.endswith('ass'):
+    if file_extension.endswith('ass') and os.path.isfile(file_string):
         # https://www.zhihu.com/question/36368902
         with open(file_string, errors='ignore') as ass_file:
             srt_str = asstosrt.convert(ass_file)
@@ -228,6 +228,8 @@ def random_int_list(start, stop, length):
 
 # 随机挑选10个字幕出来 如果这些字幕中系又带中文又带英文 则代表是双语字幕
 def check_srt_type(file_name):
+    if not os.path.isfile(file_name):
+        return SRT_TYPE.Unknown
     export = pysrt.open(file_name)
     random_length = min(10, len(export))
     if random_length == 0:

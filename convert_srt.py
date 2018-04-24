@@ -159,13 +159,14 @@ def process_video_with_srt(video_file):
 
             print(cmd)
             rst = run_command(cmd)
-            print(rst)
 
 
 def run_command(cmd):
     try:
         output = subprocess.Popen(shlex.split(cmd), stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
         rst = output.stdout.read()
+        print(rst)
+        print('==============')
         return rst
     except:
         return ''
@@ -315,7 +316,6 @@ if __name__ == "__main__":
             cmd = 'ffmpeg -i "{}" -map 0:{} "{}"'.format(video, str(video_sub_index), srt_file_name)
             print(cmd)
             rst = run_command(cmd)
-            print(rst)
             export_subtitle_list.append(srt_file_name)
 
         for video_sub_index in video_ass_index_list:
@@ -325,7 +325,6 @@ if __name__ == "__main__":
             cmd = 'ffmpeg -i "{}" -map 0:{} "{}"'.format(video, str(video_sub_index), ass_file_name)
             print(cmd)
             rst = run_command(cmd)
-            print(rst)
             convert_ass_to_srt(ass_file_name)
 
         # 挑选出内嵌字幕的中英文

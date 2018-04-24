@@ -72,6 +72,13 @@ def merge_subtitle(sub_a, sub_b, delta):
     out.clean_indexes()
     return out
 
+def validate_file_name(file_name):
+    rstr = r"[\/\\\:\*\?\"\<\>\|]"  # '/ \ : * ? " < > |'
+    new_title = re.sub(rstr, "_", file_name)
+    new_title = new_title.replace('\'','')
+    new_title = new_title.replace('"', '')
+    return new_title
+
 
 # 处理同名的视频和字幕，已经做好检测，是带原文和译文的
 def process_video_with_srt(video_file):
@@ -128,6 +135,14 @@ def process_video_with_srt(video_file):
             # 没翻译 或者没原文 不切
             if len(subtitle_text_eng) < 4 or len(subtitle_text_chn) == 0:
                 continue
+
+            # if subtitle_text_eng.startswith('Then I got really freaked out, and that'):
+            #     print(subtitle_text_eng)
+            # else:
+            #     continue
+
+            # 如果要保存 必须去掉特殊字符
+            subtitle_text_eng = validate_file_name(subtitle_text_eng)
 
             if os.name == 'nt':
                 subtext = file_name + '\\' + subtitle_text_eng + '.mp4'
